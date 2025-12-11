@@ -36,9 +36,12 @@ export default function DisplayPage() {
   }, [activeMatchId]);
 
   // Random selection animation
+  const [hasAdvanced, setHasAdvanced] = useState(false);
+  
   useEffect(() => {
     if (!match || match.status !== 'selecting') {
       setShowSelectedPitcher(false);
+      setHasAdvanced(false);
       return;
     }
 
@@ -61,7 +64,12 @@ export default function DisplayPage() {
 
       // After showing for 0.5 seconds, advance to pitch1
       setTimeout(() => {
-        advancePhase(match.id);
+        if (!hasAdvanced) {
+          setHasAdvanced(true);
+          advancePhase(match.id).catch(err => {
+            console.error('Failed to advance phase:', err);
+          });
+        }
       }, 500);
     }, 2500);
 
@@ -69,7 +77,7 @@ export default function DisplayPage() {
       clearInterval(animationInterval);
       clearTimeout(selectionTimeout);
     };
-  }, [match?.status, match?.id, match?.firstPitcher, match?.startup1.name, match?.startup2.name]);
+  }, [match?.status, match?.id, match?.firstPitcher, match?.startup1.name, match?.startup2.name, hasAdvanced]);
 
   // Phase timer - tracks phaseEndTime for all timed phases
   useEffect(() => {

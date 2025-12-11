@@ -183,11 +183,6 @@ export default function VotePage() {
         return;
       }
 
-      // Sign in anonymously to Firebase to satisfy security rules
-      if (auth) {
-        await signInAnonymously(auth);
-      }
-
       // Save session
       localStorage.setItem('voterEmail', email);
       localStorage.setItem('voterType', type);
