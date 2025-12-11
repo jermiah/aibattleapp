@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { 
-  getMatchByCode, 
-  castVote, 
-  hasVoted, 
+import {
+  getMatchByCode,
+  castVote,
+  hasVoted,
   subscribeToMatch,
   subscribeToMatches,
   registerVoter,
@@ -19,7 +19,7 @@ import { CheckCircle, XCircle, Clock, Trophy, Gavel, Users, RefreshCw, Mail, Key
 export default function VotePage() {
   const params = useParams();
   const code = params.code as string;
-  
+
   // Auth state
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [email, setEmail] = useState('');
@@ -28,14 +28,14 @@ export default function VotePage() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [eventSettings, setEventSettings] = useState<EventSettings | null>(null);
-  
+
   // Match state
   const [matches, setMatches] = useState<Match[]>([]);
   const [activeMatch, setActiveMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  
+
   // Voting state
   const [voting, setVoting] = useState(false);
   const [voteHistory, setVoteHistory] = useState<Vote[]>([]);
@@ -45,7 +45,7 @@ export default function VotePage() {
   useEffect(() => {
     const savedEmail = localStorage.getItem('voterEmail');
     const savedType = localStorage.getItem('voterType') as 'judge' | 'audience' | null;
-    
+
     if (savedEmail && savedType) {
       // Verify the voter still exists
       getVoter(savedEmail).then((voter) => {
@@ -60,7 +60,7 @@ export default function VotePage() {
         }
       });
     }
-    
+
     // Load event settings
     getEventSettings().then(setEventSettings);
   }, []);
@@ -71,30 +71,30 @@ export default function VotePage() {
       setLoading(false);
       return;
     }
-    
+
     const unsubMatches = subscribeToMatches((allMatches) => {
       setMatches(allMatches);
       // Find active match (one that's not completed, preferring voting > pitch > selecting > pending)
       const active = allMatches.find(m => m.status === 'voting') ||
-                     allMatches.find(m => m.status === 'pitch2') ||
-                     allMatches.find(m => m.status === 'pitch1') ||
-                     allMatches.find(m => m.status === 'selecting') ||
-                     allMatches.find(m => m.status === 'pending');
+        allMatches.find(m => m.status === 'pitch2') ||
+        allMatches.find(m => m.status === 'pitch1') ||
+        allMatches.find(m => m.status === 'selecting') ||
+        allMatches.find(m => m.status === 'pending');
       setActiveMatch(active || null);
       setLoading(false);
     });
-    
+
     return () => unsubMatches();
   }, [isSignedIn]);
 
   // Subscribe to vote history when signed in
   useEffect(() => {
     if (!isSignedIn || !email) return;
-    
+
     const unsubVotes = subscribeToVoterVotes(email, (votes) => {
       setVoteHistory(votes);
     });
-    
+
     return () => unsubVotes();
   }, [isSignedIn, email]);
 
@@ -104,7 +104,7 @@ export default function VotePage() {
       setHasVotedCurrentMatch(false);
       return;
     }
-    
+
     hasVoted(activeMatch.id, email).then(setHasVotedCurrentMatch);
   }, [activeMatch?.id, email, voteHistory]);
 
@@ -114,22 +114,22 @@ export default function VotePage() {
       setTimeLeft(null);
       return;
     }
-    
+
     const updateTimer = () => {
       const remaining = Math.max(0, Math.floor((activeMatch.phaseEndTime! - Date.now()) / 1000));
       setTimeLeft(remaining);
     };
-    
+
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
-    
+
     return () => clearInterval(interval);
   }, [activeMatch?.phaseEndTime]);
 
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) return false;
-    
+
     // Check for allowed domains
     const allowedDomains = eventSettings?.allowedEmailDomains || ['.com', '.ai', '.edu', '.org', '.net', '.io', '.co'];
     const domain = email.substring(email.lastIndexOf('.'));
@@ -140,7 +140,7 @@ export default function VotePage() {
     e.preventDefault();
     setAuthError('');
     setAuthLoading(true);
-    
+
     try {
       // Validate email format
       if (!validateEmail(email)) {
@@ -148,14 +148,14 @@ export default function VotePage() {
         setAuthLoading(false);
         return;
       }
-      
+
       // Check password and determine voter type
       if (!eventSettings) {
         setAuthError('Unable to load event settings. Please try again.');
         setAuthLoading(false);
         return;
       }
-      
+
       let type: 'judge' | 'audience' | null = null;
       if (password === eventSettings.judgePassword) {
         type = 'judge';
@@ -166,7 +166,7 @@ export default function VotePage() {
         setAuthLoading(false);
         return;
       }
-      
+
       // Check if email already registered with different type
       const existingVoter = await getVoter(email);
       if (existingVoter && existingVoter.voterType !== type) {
@@ -174,7 +174,7 @@ export default function VotePage() {
         setAuthLoading(false);
         return;
       }
-      
+
       // Register voter
       const result = await registerVoter(email, type);
       if (!result.success) {
@@ -182,15 +182,21 @@ export default function VotePage() {
         setAuthLoading(false);
         return;
       }
-      
+
+      // Sign in anonymously to Firebase to satisfy security rules
+      if (auth) {
+        await signInAnonymously(auth);
+      }
+
       // Save session
       localStorage.setItem('voterEmail', email);
       localStorage.setItem('voterType', type);
       setVoterType(type);
       setIsSignedIn(true);
-      
-    } catch (err) {
-      setAuthError('Sign in failed. Please try again.');
+
+    } catch (err: any) {
+      console.error('Sign in error:', err);
+      setAuthError(`Sign in failed: ${err.message || 'Please try again.'}`);
     } finally {
       setAuthLoading(false);
     }
@@ -198,7 +204,12 @@ export default function VotePage() {
 
   const handleVote = async (startupId: string, startupName: string) => {
     if (hasVotedCurrentMatch || voting || !activeMatch || activeMatch.status !== 'voting' || !voterType) return;
-    
+
+    if (!email) {
+      setError('Please sign in to vote.');
+      return;
+    }
+
     setVoting(true);
     setError('');
     try {
@@ -208,8 +219,9 @@ export default function VotePage() {
       } else {
         setError('Failed to cast vote. You may have already voted.');
       }
-    } catch (err) {
-      setError('Failed to cast vote. Please try again.');
+    } catch (err: any) {
+      console.error('Vote error:', err);
+      setError(`Failed to cast vote: ${err.message || 'Unknown error'}`);
     } finally {
       setVoting(false);
     }
@@ -240,7 +252,7 @@ export default function VotePage() {
             <h1 className="text-4xl font-bold text-white mb-2">AI Battle Royale</h1>
             <p className="text-gray-400">Sign in to vote</p>
           </div>
-          
+
           <form onSubmit={handleSignIn} className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-2xl p-6 space-y-4">
             <div>
               <label className="block text-gray-400 mb-2 text-sm">Email Address</label>
@@ -257,7 +269,7 @@ export default function VotePage() {
               </div>
               <p className="text-xs text-gray-500 mt-1">Use a valid email (.com, .ai, .edu, etc.)</p>
             </div>
-            
+
             <div>
               <label className="block text-gray-400 mb-2 text-sm">Password</label>
               <div className="relative">
@@ -273,13 +285,13 @@ export default function VotePage() {
               </div>
               <p className="text-xs text-gray-500 mt-1">Ask the organizer for the password</p>
             </div>
-            
+
             {authError && (
               <div className="bg-red-500/20 border border-red-500 rounded-lg p-3 text-center">
                 <p className="text-red-400 text-sm">{authError}</p>
               </div>
             )}
-            
+
             <button
               type="submit"
               disabled={authLoading}
@@ -327,7 +339,7 @@ export default function VotePage() {
               <span className={`w-2 h-2 rounded-full ${activeMatch.status === 'voting' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
               Current Match
             </h2>
-            
+
             {/* Waiting phases */}
             {(activeMatch.status === 'pending' || activeMatch.status === 'selecting' || activeMatch.status === 'pitch1' || activeMatch.status === 'pitch2') && (
               <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-2xl p-6 text-center">
@@ -379,7 +391,7 @@ export default function VotePage() {
 
                 <div className="space-y-4">
                   <p className="text-center text-gray-300">Choose your winner:</p>
-                  
+
                   <button
                     onClick={() => handleVote(activeMatch.startup1.id, activeMatch.startup1.name)}
                     disabled={voting}
@@ -387,9 +399,9 @@ export default function VotePage() {
                   >
                     {activeMatch.startup1.name}
                   </button>
-                  
+
                   <div className="text-center text-gray-500 font-semibold">VS</div>
-                  
+
                   <button
                     onClick={() => handleVote(activeMatch.startup2.id, activeMatch.startup2.name)}
                     disabled={voting}
@@ -448,13 +460,12 @@ export default function VotePage() {
                         <p className="text-gray-500 text-xs">
                           {match.startup1.name} vs {match.startup2.name}
                           {match.winner && (
-                            <span className={`ml-2 ${
-                              (match.winner === 'startup1' && vote.startupId === match.startup1.id) ||
+                            <span className={`ml-2 ${(match.winner === 'startup1' && vote.startupId === match.startup1.id) ||
                               (match.winner === 'startup2' && vote.startupId === match.startup2.id)
-                                ? 'text-green-400' : 'text-red-400'
-                            }`}>
+                              ? 'text-green-400' : 'text-red-400'
+                              }`}>
                               {(match.winner === 'startup1' && vote.startupId === match.startup1.id) ||
-                               (match.winner === 'startup2' && vote.startupId === match.startup2.id)
+                                (match.winner === 'startup2' && vote.startupId === match.startup2.id)
                                 ? '✓ Won' : '✗ Lost'}
                             </span>
                           )}

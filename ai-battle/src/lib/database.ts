@@ -80,7 +80,7 @@ export const createMatch = async (
   const matchesRef = ref(getDb(), 'matches');
   const newMatchRef = push(matchesRef);
   const id = newMatchRef.key!;
-  
+
   const match: Match = {
     id,
     startup1,
@@ -95,7 +95,7 @@ export const createMatch = async (
     createdAt: Date.now(),
     voteCode: generateUniqueCode(),
   };
-  
+
   await set(newMatchRef, match);
   return id;
 };
@@ -105,13 +105,13 @@ export const startMatch = async (matchId: string): Promise<void> => {
   const matchRef = ref(getDb(), `matches/${matchId}`);
   const snapshot = await get(matchRef);
   if (!snapshot.exists()) throw new Error('Match not found');
-  
+
   // Start with selection phase (3 seconds)
   const selectionEndTime = Date.now() + 3000;
-  
+
   // Randomly select who pitches first
   const firstPitcher = Math.random() < 0.5 ? 'startup1' : 'startup2';
-  
+
   await update(matchRef, {
     status: 'selecting',
     firstPitcher,
@@ -124,9 +124,9 @@ export const advancePhase = async (matchId: string): Promise<void> => {
   const matchRef = ref(getDb(), `matches/${matchId}`);
   const snapshot = await get(matchRef);
   if (!snapshot.exists()) throw new Error('Match not found');
-  
+
   const match = snapshot.val() as Match;
-  
+
   switch (match.status) {
     case 'selecting':
       // Move to pitch1
@@ -160,7 +160,7 @@ export const advancePhase = async (matchId: string): Promise<void> => {
 
 const endVotingInternal = async (matchId: string, match: Match): Promise<void> => {
   const matchRef = ref(getDb(), `matches/${matchId}`);
-  
+
   // Calculate winner based on weighted votes
   const startup1Score =
     (match.judgeVotes.startup1 * match.judgeWeight) / 100 +
@@ -168,7 +168,7 @@ const endVotingInternal = async (matchId: string, match: Match): Promise<void> =
   const startup2Score =
     (match.judgeVotes.startup2 * match.judgeWeight) / 100 +
     (match.audienceVotes.startup2 * match.audienceWeight) / 100;
-  
+
   let winner: string;
   if (startup1Score > startup2Score) {
     winner = 'startup1';
@@ -177,7 +177,7 @@ const endVotingInternal = async (matchId: string, match: Match): Promise<void> =
   } else {
     winner = 'tie';
   }
-  
+
   await update(matchRef, {
     status: 'completed',
     winner,
@@ -196,7 +196,7 @@ export const getMatchByCode = async (code: string): Promise<Match | null> => {
   const matchesRef = ref(getDb(), 'matches');
   const snapshot = await get(matchesRef);
   if (!snapshot.exists()) return null;
-  
+
   const matches = snapshot.val();
   for (const matchId in matches) {
     const match = matches[matchId] as Match;
@@ -244,10 +244,10 @@ export const startVoting = async (matchId: string): Promise<void> => {
   const matchRef = ref(getDb(), `matches/${matchId}`);
   const snapshot = await get(matchRef);
   if (!snapshot.exists()) throw new Error('Match not found');
-  
+
   const match = snapshot.val() as Match;
   const votingEndTime = Date.now() + match.votingDuration * 1000;
-  
+
   await update(matchRef, {
     status: 'voting',
     votingEndTime,
@@ -258,9 +258,9 @@ export const endVoting = async (matchId: string): Promise<void> => {
   const matchRef = ref(getDb(), `matches/${matchId}`);
   const snapshot = await get(matchRef);
   if (!snapshot.exists()) throw new Error('Match not found');
-  
+
   const match = snapshot.val() as Match;
-  
+
   // Calculate winner based on weighted votes
   const startup1Score =
     (match.judgeVotes.startup1 * match.judgeWeight) / 100 +
@@ -268,7 +268,7 @@ export const endVoting = async (matchId: string): Promise<void> => {
   const startup2Score =
     (match.judgeVotes.startup2 * match.judgeWeight) / 100 +
     (match.audienceVotes.startup2 * match.audienceWeight) / 100;
-  
+
   let winner: string | undefined;
   if (startup1Score > startup2Score) {
     winner = 'startup1';
@@ -277,7 +277,7 @@ export const endVoting = async (matchId: string): Promise<void> => {
   } else {
     winner = 'tie';
   }
-  
+
   await update(matchRef, {
     status: 'completed',
     winner,
@@ -309,22 +309,32 @@ export const castVote = async (
   voterType: 'judge' | 'audience',
   voterEmail: string
 ): Promise<boolean> => {
+  if (!matchId || !voterEmail) {
+    console.error('Invalid vote attempt:', { matchId, voterEmail });
+    throw new Error('Missing match ID or voter email');
+  }
+
   // Normalize email for consistent key
   const emailKey = voterEmail.replace(/\./g, ',');
-  
+
+  if (!emailKey) {
+    throw new Error('Invalid email key generated');
+  }
+
   // Check if already voted in this match
   const voterVoteRef = ref(getDb(), `votes/${matchId}/${emailKey}`);
   const existingVote = await get(voterVoteRef);
   if (existingVote.exists()) {
+    console.log('Vote already exists for:', emailKey);
     return false; // Already voted
   }
-  
+
   // Get match to verify it's in voting status
   const match = await getMatch(matchId);
   if (!match || match.status !== 'voting') {
     return false;
   }
-  
+
   // Record the vote
   const vote: Vote = {
     oderId: voterEmail,
@@ -335,11 +345,11 @@ export const castVote = async (
     timestamp: Date.now(),
   };
   await set(voterVoteRef, vote);
-  
+
   // Also store in voter's vote history
   const voterHistoryRef = ref(getDb(), `voters/${emailKey}/votes/${matchId}`);
   await set(voterHistoryRef, vote);
-  
+
   // Update vote count
   const voteField = startupId === match.startup1.id ? 'startup1' : 'startup2';
   const voteCountRef = ref(
@@ -348,7 +358,7 @@ export const castVote = async (
   );
   const currentCount = await get(voteCountRef);
   await set(voteCountRef, (currentCount.val() || 0) + 1);
-  
+
   return true;
 };
 
@@ -365,7 +375,7 @@ export const registerVoter = async (
   voterType: 'judge' | 'audience'
 ): Promise<{ success: boolean; error?: string }> => {
   const emailKey = email.replace(/\./g, ',');
-  
+
   // Check if email already registered
   const voterRef = ref(getDb(), `voters/${emailKey}`);
   const existingVoter = await get(voterRef);
@@ -374,7 +384,7 @@ export const registerVoter = async (
     // Return existing voter info - they can continue voting
     return { success: true };
   }
-  
+
   // Check event settings for max sign-ins
   const settings = await getEventSettings();
   if (voterType === 'audience' && settings.currentAudienceCount >= settings.maxAudienceSignIns) {
@@ -383,7 +393,7 @@ export const registerVoter = async (
   if (voterType === 'judge' && settings.currentJudgeCount >= settings.maxJudgeSignIns) {
     return { success: false, error: 'Maximum judge sign-ins reached' };
   }
-  
+
   // Register new voter
   const voter: Voter = {
     email,
@@ -392,13 +402,13 @@ export const registerVoter = async (
     votes: {},
   };
   await set(voterRef, voter);
-  
+
   // Increment count
   const countField = voterType === 'judge' ? 'currentJudgeCount' : 'currentAudienceCount';
   const settingsRef = ref(getDb(), `eventSettings/${countField}`);
   const currentCount = await get(settingsRef);
   await set(settingsRef, (currentCount.val() || 0) + 1);
-  
+
   return { success: true };
 };
 
@@ -451,7 +461,11 @@ export const getEventSettings = async (): Promise<EventSettings> => {
 
 export const updateEventSettings = async (settings: Partial<EventSettings>): Promise<void> => {
   const settingsRef = ref(getDb(), 'eventSettings');
-  await update(settingsRef, settings);
+  // Remove undefined values to prevent Firebase errors
+  const cleanSettings = Object.fromEntries(
+    Object.entries(settings).filter(([_, v]) => v !== undefined)
+  );
+  await update(settingsRef, cleanSettings);
 };
 
 export const subscribeToEventSettings = (callback: (settings: EventSettings) => void) => {

@@ -82,10 +82,10 @@ export default function AdminPage() {
     const unsubSettings = subscribeToEventSettings((settings) => {
       setEventSettings(settings);
       setSettingsForm({
-        judgePassword: settings.judgePassword,
-        audiencePassword: settings.audiencePassword,
-        maxJudgeSignIns: settings.maxJudgeSignIns,
-        maxAudienceSignIns: settings.maxAudienceSignIns,
+        judgePassword: settings.judgePassword || '',
+        audiencePassword: settings.audiencePassword || '',
+        maxJudgeSignIns: settings.maxJudgeSignIns || 10,
+        maxAudienceSignIns: settings.maxAudienceSignIns || 100,
       });
     });
     
